@@ -1,0 +1,54 @@
+{
+  "total_handovers": 204,
+  "baseline_repetition_rate": 0.7613,
+  "prototype_repetition_rate": 0.0639,
+  "repetition_reduction": 91.61,
+  "consent_violation_rate": 0.0,
+  "summary_completeness": 85.9,
+  "pending_action_recall": 75.32,
+  "human_review_rate": 10.29,
+  "fairness_work_mode": {
+    "Hybrid": {
+      "total_handovers": 69,
+      "repetition_reduction": 96.34,
+      "consent_violation_rate": 0.0,
+      "summary_completeness": 70.94,
+      "pending_action_recall": 86.96,
+      "human_review_rate": 11.59
+    },
+    "On-site": {
+      "total_handovers": 65,
+      "repetition_reduction": 96.77,
+      "consent_violation_rate": 0.0,
+      "summary_completeness": 85.06,
+      "pending_action_recall": 93.85,
+      "human_review_rate": 9.23
+    },
+    "Remote": {
+      "total_handovers": 70,
+      "repetition_reduction": 96.32,
+      "consent_violation_rate": 0.0,
+      "summary_completeness": 75.59,
+      "pending_action_recall": 91.43,
+      "human_review_rate": 10.0
+    }
+  },
+  "fairness_language": {
+    "English-primary": {
+      "total_handovers": 94,
+      "repetition_reduction": 96.3,
+      "consent_violation_rate": 0.0,
+      "summary_completeness": 74.66,
+      "pending_action_recall": 89.36,
+      "human_review_rate": 13.83
+    },
+    "Multilingual/non-English-primary": {
+      "total_handovers": 110,
+      "repetition_reduction": 96.61,
+      "consent_violation_rate": 0.0,
+      "summary_completeness": 79.06,
+      "pending_action_recall": 91.82,
+      "human_review_rate": 7.27
+    }
+  }
+}
