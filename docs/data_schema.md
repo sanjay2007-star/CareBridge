@@ -1,19 +1,21 @@
-# Database Schema & Entity Documentation
+# Database Schema & API Endpoint Specifications
 
-The database is built on SQLite with SQLAlchemy ORM models.
+The database is built on SQLite with SQLAlchemy ORM models, complemented by FastAPI Pydantic request/response schemas.
 
-## Entities
+---
+
+## 1. Relational Database Entities
 
 ### CLIENT
 - `client_id` (PK, String): Unique client identifier (e.g. C001)
 - `age_group` (String): Demographic age group ('18-25', '26-35', '36-50', '51+')
 - `work_mode` (String): 'Remote', 'Hybrid', 'On-site'
 - `preferred_language` (String): 'English-primary', 'Multilingual/non-English-primary'
-- `region` (String): Geographical region
+- `region` (String): Geographical region ('North America', 'EMEA', 'APAC', 'LATAM')
 - `created_at` (DateTime): Registration timestamp
 
 ### SESSION
-- `session_id` (PK, String): Unique session identifier
+- `session_id` (PK, String): Unique session identifier (e.g. SESS_0001)
 - `client_id` (FK, String): Client reference
 - `counsellor_id` (FK, String): Counsellor reference
 - `session_date` (String): Date formatted YYYY-MM-DD
@@ -71,3 +73,18 @@ The database is built on SQLite with SQLAlchemy ORM models.
 - `maximum_active_cases` (Integer): Maximum workload cap
 - `current_active_cases` (Integer): Active case load
 - `available_slots` (Integer): Remaining open capacity
+
+---
+
+## 2. API Endpoint Schemas
+
+### Consent Engine Endpoints
+- `POST /api/consent/check`: Evaluates explicit client consent for a category & role (`ConsentCheckRequest` $\rightarrow$ `ConsentCheckResponse`).
+- `POST /api/consent/filter`: Filters session summary text, returning approved vs restricted categories (`ConsentFilterRequest` $\rightarrow$ `ConsentFilterResponse`).
+
+### Handover Generator Endpoints
+- `POST /api/handovers/generate`: Generates deterministic baseline vs prototype handover summaries (`HandoverGenerationRequest` $\rightarrow$ `HandoverSummaryResponse`).
+- `POST /api/handovers/preview`: Previews handover summary and checks staff capacity.
+
+### Section 10 Conflict Detection Endpoint
+- `POST /api/conflict/detect`: Runs Section 10 rule & semantic conflict detection across historical session notes (`ConflictCheckRequest` $\rightarrow$ `ConflictCheckResponse`).

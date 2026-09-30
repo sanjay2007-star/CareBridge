@@ -1,29 +1,44 @@
 import sys
 import os
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.database import SessionLocal, engine, Base
-from backend.models import Client, ConsentRecord, SessionRecord, ClientGoal, StaffUser
+from backend.models import Base, Client, ConsentRecord, SessionRecord, ClientGoal, StaffUser
 from backend.consent.consent_engine import is_category_consented, filter_session_data
-from backend.handover.continuity_engine import generate_prototype_summary
 
-@pytest.fixture(scope="module")
-def db_session():
+TEST_DB_FILE = os.path.join(os.path.dirname(__file__), "test_consent_temp.db")
+TEST_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_test_db():
+    if os.path.exists(TEST_DB_FILE):
+        os.remove(TEST_DB_FILE)
+    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    yield engine
+    if os.path.exists(TEST_DB_FILE):
+        try:
+            os.remove(TEST_DB_FILE)
+        except Exception:
+            pass
+
+@pytest.fixture(scope="function")
+def db_session(setup_test_db):
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=setup_test_db)
+    db = TestingSessionLocal()
     yield db
     db.close()
 
 def test_missing_consent_excludes_information(db_session):
     """Case 1: Missing Consent -> Information excluded by default."""
     client_id = "TEST_NOCONSENT_01"
-    # Create client with NO consent records
     c = Client(client_id=client_id, age_group="26-35", work_mode="Remote", preferred_language="English-primary", region="EMEA")
     db_session.add(c)
     db_session.commit()
 
-    # Check category consent
     is_granted = is_category_consented(db_session, client_id, "financial", "social_worker")
     assert is_granted is False, "Missing consent should evaluate to False (privacy-by-default)"
 
@@ -38,7 +53,6 @@ def test_revoked_consent_excludes_information(db_session):
     c = Client(client_id=client_id, age_group="36-50", work_mode="Hybrid", preferred_language="English-primary", region="North America")
     db_session.add(c)
 
-    # Granted then revoked
     cn = ConsentRecord(
         consent_id="CNS_REV_1",
         client_id=client_id,

@@ -138,3 +138,78 @@ class EvaluationReportResponse(BaseModel):
     human_review_rate: float
     fairness_work_mode: dict
     fairness_language: dict
+
+# Explicit Endpoint Schemas for Consent Engine & Handover Summary Generator & Conflict Detection
+class ConsentCheckRequest(BaseModel):
+    client_id: str
+    information_category: str
+    recipient_role: str
+
+class ConsentCheckResponse(BaseModel):
+    client_id: str
+    information_category: str
+    recipient_role: str
+    is_consented: bool
+    consent_status: str
+
+class ConsentFilterRequest(BaseModel):
+    client_id: str
+    session_summary: str
+    recipient_role: str
+
+class ConsentFilterResponse(BaseModel):
+    client_id: str
+    recipient_role: str
+    filtered_text: str
+    approved_categories: List[str]
+    restricted_categories: List[str]
+
+class HandoverGenerationRequest(BaseModel):
+    client_id: str
+    from_staff_id: str
+    to_staff_id: str
+
+class HandoverSummaryResponse(BaseModel):
+    client_id: str
+    from_staff_id: str
+    to_staff_id: str
+    recipient_role: str
+    baseline_summary: str
+    prototype_summary: str
+    confidence_score: float
+    requires_human_review: bool
+    review_reasons: List[str]
+    approved_categories: List[str]
+    restricted_categories: List[str]
+
+class ConflictCheckRequest(BaseModel):
+    client_id: str
+
+class ConflictFlagOut(BaseModel):
+    session_id_1: Optional[str] = None
+    session_date_1: Optional[str] = None
+    session_id_2: Optional[str] = None
+    session_date_2: Optional[str] = None
+    conflict_category: str
+    severity: str
+    description: str
+    confidence_penalty: float
+
+class ConflictCheckResponse(BaseModel):
+    client_id: str
+    has_conflict: bool
+    max_confidence_penalty: float
+    conflict_flags: List[ConflictFlagOut]
+
+class SyntheticDatasetSummaryResponse(BaseModel):
+    total_clients: int
+    work_mode_distribution: dict
+    language_distribution: dict
+    age_group_distribution: dict
+    total_sessions: int
+    sensitivity_distribution: dict
+    total_consents: int
+    consent_status_distribution: dict
+    staff_capacity: dict
+    flagged_conflicts_count: int
+

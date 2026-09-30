@@ -16,11 +16,15 @@ from backend.schemas import (
     ClientOut, StaffUserOut, SessionRecordOut, ClientGoalOut,
     ConsentRecordOut, ConsentUpdate, PendingActionOut, PendingActionCreate,
     HandoverCreate, HandoverOut, AuditLogOut, HandoverPreviewResponse,
-    EvaluationReportResponse
+    EvaluationReportResponse, ConsentCheckRequest, ConsentCheckResponse,
+    ConsentFilterRequest, ConsentFilterResponse, HandoverGenerationRequest,
+    HandoverSummaryResponse, ConflictCheckRequest, ConflictCheckResponse,
+    SyntheticDatasetSummaryResponse
 )
 from backend.auth.auth import get_current_user, CurrentUser, require_role, log_audit
 from backend.consent.consent_engine import is_category_consented, filter_session_data
 from backend.handover.continuity_engine import generate_baseline_summary, generate_prototype_summary
+from backend.handover.conflict_engine import detect_conflicts
 from backend.scheduling.scheduling_engine import check_and_allocate_staff_capacity, recommend_available_staff
 
 # Initialize DB tables
@@ -233,6 +237,37 @@ def update_consent(
     log_audit(db, user.user_id, payload.client_id, f"UPDATE_CONSENT_{payload.consent_status.upper()}", "CONSENT", "SUCCESS")
     return rec
 
+@app.post("/api/consent/check", response_model=ConsentCheckResponse)
+def check_consent_endpoint(
+    payload: ConsentCheckRequest,
+    db: Session = Depends(get_db)
+):
+    is_granted = is_category_consented(db, payload.client_id, payload.information_category, payload.recipient_role)
+    status_str = "granted" if is_granted else "revoked/missing"
+    return ConsentCheckResponse(
+        client_id=payload.client_id,
+        information_category=payload.information_category,
+        recipient_role=payload.recipient_role,
+        is_consented=is_granted,
+        consent_status=status_str
+    )
+
+@app.post("/api/consent/filter", response_model=ConsentFilterResponse)
+def filter_consent_endpoint(
+    payload: ConsentFilterRequest,
+    db: Session = Depends(get_db)
+):
+    filtered, approved_cats, restr_cats = filter_session_data(
+        db, payload.client_id, payload.session_summary, payload.recipient_role
+    )
+    return ConsentFilterResponse(
+        client_id=payload.client_id,
+        recipient_role=payload.recipient_role,
+        filtered_text=filtered,
+        approved_categories=approved_cats,
+        restricted_categories=restr_cats
+    )
+
 # ----------------- SESSIONS ENDPOINTS -----------------
 @app.get("/api/clients/{client_id}/sessions", response_model=List[SessionRecordOut])
 def get_client_sessions(
@@ -393,15 +428,110 @@ def create_handover(
     log_audit(db, user.user_id, payload.client_id, f"CREATE_HANDOVER_{status_str.upper()}", "HANDOVER", "SUCCESS")
     return handover
 
+@app.post("/api/handovers/generate", response_model=HandoverSummaryResponse)
+def generate_handover_endpoint(
+    payload: HandoverGenerationRequest,
+    db: Session = Depends(get_db)
+):
+    to_staff = db.query(StaffUser).filter(StaffUser.staff_id == payload.to_staff_id).first()
+    if not to_staff:
+        raise HTTPException(status_code=404, detail="Recipient staff member not found")
+
+    recipient_role = to_staff.role
+    baseline = generate_baseline_summary(db, payload.client_id)
+    proto_text, confidence, req_review, review_reasons, app_cats, restr_cats = generate_prototype_summary(
+        db, payload.client_id, recipient_role
+    )
+
+    return HandoverSummaryResponse(
+        client_id=payload.client_id,
+        from_staff_id=payload.from_staff_id,
+        to_staff_id=payload.to_staff_id,
+        recipient_role=recipient_role,
+        baseline_summary=baseline,
+        prototype_summary=proto_text,
+        confidence_score=confidence,
+        requires_human_review=req_review,
+        review_reasons=review_reasons,
+        approved_categories=app_cats,
+        restricted_categories=restr_cats
+    )
+
+@app.post("/api/conflict/detect", response_model=ConflictCheckResponse)
+def detect_conflict_endpoint(
+    payload: ConflictCheckRequest,
+    db: Session = Depends(get_db)
+):
+    sessions = db.query(SessionRecord).filter(SessionRecord.client_id == payload.client_id).all()
+    session_dicts = [
+        {"session_id": s.session_id, "session_date": s.session_date, "session_summary": s.session_summary}
+        for s in sessions
+    ]
+    has_conflict, penalty, flags = detect_conflicts(session_dicts)
+    return ConflictCheckResponse(
+        client_id=payload.client_id,
+        has_conflict=has_conflict,
+        max_confidence_penalty=penalty,
+        conflict_flags=flags
+    )
+
 @app.get("/api/handovers", response_model=List[HandoverOut])
 def get_handovers(db: Session = Depends(get_db)):
     return db.query(HandoverRecord).order_by(HandoverRecord.created_at.desc()).all()
 
-# ----------------- EVALUATION ENDPOINT -----------------
+# ----------------- EVALUATION & DATASET ENDPOINTS -----------------
 @app.get("/api/evaluation/report", response_model=EvaluationReportResponse)
 def get_evaluation_report(db: Session = Depends(get_db)):
     from evaluation.experiment import run_evaluation_experiment
     return run_evaluation_experiment(db)
+
+@app.get("/api/dataset/summary", response_model=SyntheticDatasetSummaryResponse)
+def get_dataset_summary(db: Session = Depends(get_db)):
+    clients = db.query(Client).all()
+    sessions = db.query(SessionRecord).all()
+    consents = db.query(ConsentRecord).all()
+    staff = db.query(StaffUser).all()
+
+    work_mode_dist = {}
+    lang_dist = {}
+    age_dist = {}
+    for c in clients:
+        work_mode_dist[c.work_mode] = work_mode_dist.get(c.work_mode, 0) + 1
+        lang_dist[c.preferred_language] = lang_dist.get(c.preferred_language, 0) + 1
+        age_dist[c.age_group] = age_dist.get(c.age_group, 0) + 1
+
+    sens_dist = {}
+    for s in sessions:
+        sens_dist[s.sensitivity_level] = sens_dist.get(s.sensitivity_level, 0) + 1
+
+    consent_dist = {}
+    for cn in consents:
+        consent_dist[cn.consent_status] = consent_dist.get(cn.consent_status, 0) + 1
+
+    couns_count = sum(1 for st in staff if st.role == "counsellor")
+    sw_count = sum(1 for st in staff if st.role == "social_worker")
+
+    # Flagged conflicts count across all clients
+    flagged_count = 0
+    for c in clients:
+        c_sessions = [s for s in sessions if s.client_id == c.client_id]
+        s_dicts = [{"session_id": s.session_id, "session_date": s.session_date, "session_summary": s.session_summary} for s in c_sessions]
+        has_c, _, _ = detect_conflicts(s_dicts)
+        if has_c:
+            flagged_count += 1
+
+    return SyntheticDatasetSummaryResponse(
+        total_clients=len(clients),
+        work_mode_distribution=work_mode_dist,
+        language_distribution=lang_dist,
+        age_group_distribution=age_dist,
+        total_sessions=len(sessions),
+        sensitivity_distribution=sens_dist,
+        total_consents=len(consents),
+        consent_status_distribution=consent_dist,
+        staff_capacity={"counsellors": couns_count, "social_workers": sw_count},
+        flagged_conflicts_count=flagged_count
+    )
 
 # ----------------- AUDIT LOGS ENDPOINT -----------------
 @app.get("/api/audit-logs", response_model=List[AuditLogOut])
